@@ -39,7 +39,7 @@ class Server():
             if dev:
                 v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_trackbar_values()
             else:
-                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_red()
+                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_red() # can be change to green & blue
 
             mask = cv2.inRange(
                 frame_to_thresh, (v1_min, v2_min, v3_min), (v1_max, v2_max, v3_max))

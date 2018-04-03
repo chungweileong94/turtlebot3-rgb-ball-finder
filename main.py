@@ -63,17 +63,17 @@ class Server():
 
                     if center[0] <= cv_img.shape[1]/5*2:
                         self.twist.linear.x = 0.0
-                        self.twist.angular.z = 0.05
+                        self.twist.angular.z = 0.1
                         # print "Adjust to left"
                     elif center[0] >= cv_img.shape[1]/5*3:
                         self.twist.linear.x = 0.0
-                        self.twist.angular.z = -0.05
+                        self.twist.angular.z = -0.1
                         # print "Adjust to right"
                     else:
                         scan_msg = rospy.wait_for_message("scan", LaserScan)
 
                         if scan_msg.ranges[1] > self.OBSTACLE_MIN_DIST+0.2:
-                            self.twist.linear.x = 0.2
+                            self.twist.linear.x = 0.5
                             self.twist.angular.z = 0.0
                             # print "Forward to target ", self.current_search_color
                         elif scan_msg.ranges[1] > self.OBSTACLE_MIN_DIST:

@@ -57,6 +57,10 @@ class Server():
                 if len(cnts) > 0:
                     c = max(cnts, key=cv2.contourArea)
                     M = cv2.moments(c)
+
+                    if M["m00"] == 0:
+                        break
+
                     center = (int(M["m10"] / M["m00"]),
                               int(M["m01"] / M["m00"]))
                     cv2.circle(cv_img, center, 20, (0, 0, 0))

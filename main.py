@@ -164,7 +164,7 @@ class Server():
 
     # get range filter value for red
     def get_range_filter_red(self):
-        return [0, 12, 0, 59, 255, 255]
+        return [0, 12, 0, 29, 255, 255]
 
     # get range filter value for green
     def get_range_filter_green(self):

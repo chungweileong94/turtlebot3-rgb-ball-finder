@@ -13,9 +13,17 @@ class Server():
         # initialize server node
         rospy.init_node("server", anonymous=True)
 
-        self.OBSTACLE_MIN_DIST = 0.4
-        self.RANGE_FILTER = "HSV"
+        self.OBSTACLE_MIN_DIST = 0.4  # define the minimum distance to obstacle
+        self.RANGE_FILTER = "HSV"  # define range filter type
         self.current_search_color = 0  # 0=red, 1=green, 2=blue
+
+        # define a list objects that it need to find
+        self.colorDetectionList = [
+            self.get_range_filter_red(),
+            self.get_range_filter_green(),
+            self.get_range_filter_blue(),
+            self.get_range_filter_yellow()
+        ]
 
         # setup cmd_vel publisher
         self.cmd_vel_publisher = rospy.Publisher(
@@ -24,26 +32,30 @@ class Server():
     # run the logic (search for balls)
     def run(self, show=False, dev=False, testMode=False):
         if testMode:
+            # setup range filter trackbar if in test mode
             self.setup_range_filter_trackbar()
         else:
-            if self.current_search_color == 0:
-                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_red()
-            elif self.current_search_color == 1:
-                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_green()
-            else:
-                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_blue()
+            # setup predefine range filter colors
+            v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.colorDetectionList[
+                self.current_search_color]
 
         self.twist = Twist()
 
         while not rospy.is_shutdown():
+            # enable range filter trackbar if in test mode
             if testMode:
                 v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_trackbar_values()
 
+            # receive camera image from turtlebot
             camera_msg = rospy.wait_for_message("/camera/rgb/image_raw", Image)
+            # convert image to openCV image
             cv_img = CvBridge().imgmsg_to_cv2(camera_msg, "bgr8")
+            # resize image
             cv_img = cv2.resize(cv_img, (0, 0), fx=.5, fy=.5)
+            # convert image color to HSV
             frame_to_thresh = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
 
+            # get the mask based on the predefine HSV color
             mask = cv2.inRange(
                 frame_to_thresh, (v1_min, v2_min, v3_min), (v1_max, v2_max, v3_max))
 
@@ -52,6 +64,7 @@ class Server():
                                     cv2.CHAIN_APPROX_SIMPLE)[-2]
             center = None
 
+            # this step will be skiped if it is in test mode
             if not testMode:
                 # only proceed if at least one contour was found
                 if len(cnts) > 0:
@@ -110,9 +123,11 @@ class Server():
                 cv2.imshow("Camera", cv_img)
                 cv2.waitKey(1)
 
+            # send the movement command
             self.cmd_vel_publisher.publish(self.twist)
 
-        if self.current_search_color <= 2:
+        # check if there is still have objects to detect/find
+        if self.current_search_color < len(self.colorDetectionList):
             self.run(show, dev)
 
     # setup trackbar for range filter
@@ -158,6 +173,10 @@ class Server():
     # get range filter value for blue
     def get_range_filter_blue(self):
         return [120, 0, 0, 179, 255, 255]
+
+    # get range filter value for yellow
+    def get_range_filter_yellow(self):
+        return [1, 0, 0, 59, 255, 255]
 
 
 if __name__ == '__main__':

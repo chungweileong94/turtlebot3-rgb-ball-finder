@@ -8,6 +8,25 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image, LaserScan
 
 
+class RangeFilter():
+    def __init__(self, name, v1_min, v2_min, v3_min, v1_max, v2_max, v3_max):
+        self.name = name
+        self.v1_min = v1_min
+        self.v2_min = v2_min
+        self.v3_min = v3_min
+        self.v1_max = v1_max
+        self.v2_max = v2_max
+        self.v3_max = v3_max
+
+    # return HSV min range
+    def getHSVMin(self):
+        return (self.v1_min, self.v2_min, self.v3_min)
+
+    # return HSV max range
+    def getHSVMax(self):
+        return (self.v1_max, self.v2_max, self.v3_max)
+
+
 class Server():
     def __init__(self):
         # initialize server node
@@ -15,7 +34,7 @@ class Server():
 
         self.OBSTACLE_MIN_DIST = 0.4  # define the minimum distance to obstacle
         self.RANGE_FILTER = "HSV"  # define range filter type
-        self.current_search_color = 0  # 0=red, 1=green, 2=blue
+        self.current_search_color = 0  # current searching index
 
         # define a list objects that it need to find
         self.colorDetectionList = [
@@ -30,13 +49,13 @@ class Server():
             "cmd_vel", Twist, queue_size=1)
 
     # run the logic (search for balls)
-    def run(self, show=False, dev=False, testMode=False):
+    def run(self, show=False, testMode=False):
         if testMode:
             # setup range filter trackbar if in test mode
             self.setup_range_filter_trackbar()
         else:
             # setup predefine range filter colors
-            v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.colorDetectionList[
+            rangeFilter = self.colorDetectionList[
                 self.current_search_color]
 
         self.twist = Twist()
@@ -44,7 +63,7 @@ class Server():
         while not rospy.is_shutdown():
             # enable range filter trackbar if in test mode
             if testMode:
-                v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = self.get_range_filter_trackbar_values()
+                rangeFilter = self.get_range_filter_trackbar_values()
 
             # receive camera image from turtlebot
             camera_msg = rospy.wait_for_message("/camera/rgb/image_raw", Image)
@@ -57,7 +76,7 @@ class Server():
 
             # get the mask based on the predefine HSV color
             mask = cv2.inRange(
-                frame_to_thresh, (v1_min, v2_min, v3_min), (v1_max, v2_max, v3_max))
+                frame_to_thresh, rangeFilter.getHSVMin(), rangeFilter.getHSVMax())
 
             # get ball coordination
             cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
@@ -78,57 +97,60 @@ class Server():
                               int(M["m01"] / M["m00"]))
                     cv2.circle(cv_img, center, 20, (0, 0, 0))
 
+                    # Adjust to left
                     if center[0] <= cv_img.shape[1]/5*2:
                         self.twist.linear.x = 0.0
                         self.twist.angular.z = 0.1
-                        # print "Adjust to left"
+                    # Adjust to right
                     elif center[0] >= cv_img.shape[1]/5*3:
                         self.twist.linear.x = 0.0
                         self.twist.angular.z = -0.1
-                        # print "Adjust to right"
                     else:
                         scan_msg = rospy.wait_for_message("scan", LaserScan)
 
+                        # forward to target - fast
                         if scan_msg.ranges[1] > self.OBSTACLE_MIN_DIST+0.2:
                             self.twist.linear.x = 0.5
                             self.twist.angular.z = 0.0
-                            # print "Forward to target ", self.current_search_color
+                        # forward tp target - slow
                         elif scan_msg.ranges[1] > self.OBSTACLE_MIN_DIST:
                             self.twist.linear.x = 0.1
                             self.twist.angular.z = 0.0
-                            # print "Forward to target ", self.current_search_color
                         else:
-                            # found
+                            # target found
                             self.twist.linear.x = 0.0
                             self.twist.angular.z = 0.0
-                            print "Target Found ", self.current_search_color
+                            print "Target Found ", self.colorDetectionList[self.current_search_color].name
                             self.current_search_color += 1
                             self.cmd_vel_publisher.publish(self.twist)
                             break
                 else:
+                    # searching
                     self.twist.linear.x = 0.0
                     self.twist.angular.z = 0.3
-                    # print "Searching..."
 
             # show camera view
             if show:
-                if dev:
-                    res = cv2.bitwise_and(cv_img, cv_img, mask=mask)
-                    cv2.imshow('Target', res)
-
-                cv2.line(cv_img, (cv_img.shape[1]/5*2, 0),
-                         (cv_img.shape[1]/5*2, cv_img.shape[0]), (0, 0, 0), 3)
-                cv2.line(cv_img, (cv_img.shape[1]/5*3, 0),
-                         (cv_img.shape[1]/5*3, cv_img.shape[0]), (0, 0, 0), 3)
-                cv2.imshow("Camera", cv_img)
-                cv2.waitKey(1)
+                self.showCamera(cv_img, mask)
 
             # send the movement command
             self.cmd_vel_publisher.publish(self.twist)
 
         # check if there is still have objects to detect/find
         if self.current_search_color < len(self.colorDetectionList):
-            self.run(show, dev)
+            self.run(show)
+
+    # show camera
+    def showCamera(self, cv_img, mask):
+        res = cv2.bitwise_and(cv_img, cv_img, mask=mask)
+        cv2.imshow('Target', res)
+
+        cv2.line(cv_img, (cv_img.shape[1]/5*2, 0),
+                 (cv_img.shape[1]/5*2, cv_img.shape[0]), (0, 0, 0), 3)
+        cv2.line(cv_img, (cv_img.shape[1]/5*3, 0),
+                 (cv_img.shape[1]/5*3, cv_img.shape[0]), (0, 0, 0), 3)
+        cv2.imshow("Camera", cv_img)
+        cv2.waitKey(1)
 
     # setup trackbar for range filter
     def setup_range_filter_trackbar(self):
@@ -160,24 +182,28 @@ class Server():
                 v = cv2.getTrackbarPos("%s_%s" % (j, i), "Trackbars")
                 values.append(v)
 
-        return values
+        return RangeFilter("", values[0], values[1], values[2], values[3], values[4], values[5])
 
     # get range filter value for red
     def get_range_filter_red(self):
-        return [0, 12, 0, 29, 255, 255]
+        # return [0, 12, 0, 29, 255, 255]
+        return RangeFilter("red", 0, 12, 0, 29, 255, 255)
 
     # get range filter value for green
     def get_range_filter_green(self):
-        return [60, 0, 0, 119, 255, 255]
+        # return [60, 0, 0, 119, 255, 255]
+        return RangeFilter("green", 60, 0, 0, 119, 255, 255)
 
     # get range filter value for blue
     def get_range_filter_blue(self):
-        return [120, 0, 0, 179, 255, 255]
+        # return [120, 0, 0, 179, 255, 255]
+        return RangeFilter("blue", 120, 0, 0, 179, 255, 255)
 
     # get range filter value for yellow
     def get_range_filter_yellow(self):
-        return [1, 0, 0, 59, 255, 255]
+        # return [1, 0, 0, 59, 255, 255]
+        return RangeFilter("yellow", 1, 0, 0, 59, 255, 255)
 
 
 if __name__ == '__main__':
-    Server().run(True, True, False)
+    Server().run(True, False)
